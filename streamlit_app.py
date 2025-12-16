@@ -266,6 +266,74 @@ class HeartDiseaseWebApp:
             st.warning(f"⚠️ Could not load background data: {str(e)}")
             return None
     
+    def initialize_shap_explainer(self):
+        """Initialize SHAP explainer for the best model."""
+        try:
+            if self.best_model is None:
+                st.warning("⚠️ Best model not initialized")
+                return False
+            
+            model_name = getattr(self, 'best_model_name', 'Unknown')
+            model_type = type(self.best_model).__name__
+            
+            # Get background data
+            background_data = self.get_background_data()
+            if background_data is None or len(background_data) == 0:
+                st.warning("⚠️ Could not load background data for SHAP")
+                return False
+            
+            # Handle VotingClassifier (Ensemble)
+            if 'Voting' in model_type or 'Ensemble' in model_name:
+                if hasattr(self.best_model, 'estimators_'):
+                    for est in self.best_model.estimators_:
+                        est_type = type(est).__name__
+                        if 'Forest' in est_type or 'XGB' in est_type:
+                            try:
+                                self.shap_explainer = shap.TreeExplainer(est)
+                                self.shap_initialized = True
+                                return True
+                            except Exception:
+                                pass
+                
+                # Fallback: KernelExplainer
+                try:
+                    self.shap_explainer = shap.KernelExplainer(
+                        self.best_model.predict_proba,
+                        background_data[:20]
+                    )
+                    self.shap_initialized = True
+                    return True
+                except Exception:
+                    pass
+            
+            # Tree-based models
+            elif any(x in model_type for x in ['Forest', 'XGB', 'Gradient', 'Tree']):
+                try:
+                    self.shap_explainer = shap.TreeExplainer(self.best_model)
+                    self.shap_initialized = True
+                    return True
+                except Exception:
+                    pass
+            
+            # Fallback: KernelExplainer for all models
+            try:
+                predict_fn = self.best_model.predict_proba if hasattr(self.best_model, 'predict_proba') else self.best_model.predict
+                self.shap_explainer = shap.KernelExplainer(
+                    predict_fn,
+                    background_data[:20]
+                )
+                self.shap_initialized = True
+                return True
+            except Exception as e:
+                st.error(f"❌ SHAP initialization failed: {str(e)}")
+                self.shap_initialized = False
+                return False
+            
+        except Exception as e:
+            st.error(f"❌ SHAP init error: {str(e)}")
+            self.shap_initialized = False
+            return False
+    
     def generate_shap_explanation(self, features):
         """Generate SHAP explanation for a single prediction."""
         try:
@@ -1762,89 +1830,44 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
             return df
 
     def make_prediction(self, features):
-        """Make prediction using the loaded model."""
+        """Make prediction using the loaded best_model."""
         try:
-            if not self.models_loaded or not self.predictor:
+            if not self.models_loaded or not self.predictor or self.best_model is None:
                 st.error("Models not loaded")
                 return None
             
             # Convert features to DataFrame
             feature_df = pd.DataFrame([features])
+            feature_df_proc = self.apply_feature_engineering(feature_df)
             
-            # Use the optimized predictor's prediction method if available
-            if hasattr(self.predictor, 'predict_with_confidence'):
-                # Use the optimized predictor's method
-                results = self.predictor.predict_with_confidence(feature_df)
-                if results and len(results) > 0:
-                    result = results[0]
-                    return {
-                        'prediction': result['prediction'],
-                        'probability': result['probability'],
-                        'percentage': result['percentage'],
-                        'risk_level': result['risk_level'],
-                        'confidence': result['confidence']
-                    }
+            # Align features with training data
+            if hasattr(self.predictor, 'feature_names') and self.predictor.feature_names:
+                expected = self.predictor.feature_names
+                for c in set(expected) - set(feature_df_proc.columns):
+                    feature_df_proc[c] = 0
+                for c in set(feature_df_proc.columns) - set(expected):
+                    feature_df_proc = feature_df_proc.drop(columns=[c])
+                feature_df_proc = feature_df_proc[expected]
             
-            # Fallback prediction method
-            if hasattr(self.predictor, 'predict'):
-                try:
-                    prediction = self.predictor.predict(feature_df)
-                    probability = getattr(self.predictor, 'predict_proba', lambda x: [0.5])(feature_df)
-                except Exception as e:
-                    # Some sklearn/xgboost combinations can raise attribute errors (e.g., monotonic_cst)
-                    # Fall back to a stable model (Random Forest or XGBoost) to ensure prediction succeeds
-                    fallback_model = None
-                    if hasattr(self.predictor, 'models') and isinstance(self.predictor.models, dict):
-                        fallback_model = self.predictor.models.get('Random Forest') or self.predictor.models.get('XGBoost')
-                    if fallback_model is not None and hasattr(self.predictor, 'scaler'):
-                        X = feature_df.copy()
-                        expected = getattr(self.predictor, 'feature_names', None)
-                        if expected is not None:
-                            missing = set(expected) - set(X.columns)
-                            extra = set(X.columns) - set(expected)
-                            for c in missing:
-                                X[c] = 0
-                            if extra:
-                                X = X.drop(columns=list(extra))
-                            X = X[expected]
-                        Xs = self.predictor.scaler.transform(X)
-                        try:
-                            prediction = fallback_model.predict(Xs)
-                            probability = fallback_model.predict_proba(Xs) if hasattr(fallback_model, 'predict_proba') else [0.5]
-                            # Update best model context to reflect fallback
-                            self.best_model = fallback_model
-                            self.best_model_name = type(fallback_model).__name__
-                        except Exception as e2:
-                            raise e2
-                    else:
-                        # If no fallback available, re-raise original error for display
-                        raise e
-                
-                if hasattr(probability, '__len__') and len(probability) > 0:
-                    if hasattr(probability[0], '__len__'):
-                        prob = probability[0][1] if len(probability[0]) > 1 else probability[0][0]
-                    else:
-                        prob = probability[0]
-                else:
-                    prob = 0.5
-                    
-                pred = prediction[0] if hasattr(prediction, '__len__') else prediction
-                    
+            # Scale
+            if hasattr(self, 'scaler') and self.scaler is not None:
+                X_scaled = self.scaler.transform(feature_df_proc)
             else:
-                # Manual prediction using loaded components
-                feature_df_processed = self.apply_feature_engineering(feature_df)
-                
-                if hasattr(self, 'feature_selector') and self.feature_selector is not None:
-                    features_selected = self.feature_selector.transform(feature_df_processed)
-                    features_scaled = self.scaler.transform(features_selected)
+                X_scaled = feature_df_proc.values
+            
+            # Predict with best_model
+            prediction = self.best_model.predict(X_scaled)
+            probability = self.best_model.predict_proba(X_scaled) if hasattr(self.best_model, 'predict_proba') else None
+            
+            pred = prediction[0] if hasattr(prediction, '__len__') else prediction
+            
+            if probability is not None:
+                if hasattr(probability[0], '__len__'):
+                    prob = float(probability[0][1]) if len(probability[0]) > 1 else float(probability[0][0])
                 else:
-                    features_scaled = self.scaler.transform(feature_df_processed)
-                
-                prediction = self.best_model.predict(features_scaled)
-                probability = self.best_model.predict_proba(features_scaled)
-                
-                pred = prediction[0]
-                prob = probability[0][1] if len(probability[0]) > 1 else probability[0][0]
+                    prob = float(probability[0])
+            else:
+                prob = 0.5
             
             # Determine risk level
             if prob >= 0.7:
@@ -1864,7 +1887,7 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
                 confidence = "High"
             
             return {
-                'prediction': int(pred) if hasattr(pred, '__int__') else pred,
+                'prediction': int(pred),
                 'probability': float(prob),
                 'percentage': f"{prob*100:.1f}%",
                 'risk_level': risk_level,
@@ -1872,15 +1895,11 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
             }
             
         except Exception as e:
-            # Do not surface internal model attribute errors; provide a graceful message
-            st.warning("Encountered a model issue. Used a safe fallback for prediction.")
-            return {
-                'prediction': 0,
-                'probability': 0.5,
-                'percentage': "50.0%",
-                'risk_level': "Moderate",
-                'confidence': "Medium"
-            }
+            st.error(f"Prediction failed: {str(e)}")
+            import traceback
+            with st.expander("🔍 Prediction Error Details"):
+                st.code(traceback.format_exc())
+            return None
 
     def create_sidebar(self):
         """Create sidebar with input parameters (email config removed)."""
