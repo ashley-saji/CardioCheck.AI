@@ -74,7 +74,7 @@ warnings.filterwarnings('ignore')
 
 # Configure Streamlit page
 st.set_page_config(
-    page_title="Heart Disease Prediction App",
+    page_title="CardioCheck.AI",
     page_icon="❤️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -1678,9 +1678,11 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
         try:
             # Try REGULAR model first (most reliable)
             if REGULAR_MODEL_AVAILABLE:
+                st.write("🔍 Attempting to load regular models...")
                 self.predictor = HeartDiseasePredictor()
                 if hasattr(self.predictor, 'load_models'):
                     loaded_ok = self.predictor.load_models()
+                    st.write(f"Load result: {loaded_ok}, best_model={self.predictor.best_model is not None}")
                     
                     if loaded_ok:
                         self.best_model = getattr(self.predictor, 'best_model', None)
@@ -1688,6 +1690,14 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
                         self.scaler = getattr(self.predictor, 'scaler', None)
                         self.feature_selector = getattr(self.predictor, 'feature_selector', None)
                         self.selected_features = getattr(self.predictor, 'selected_features', None)
+                        
+                        # Validate best_model is not None
+                        if self.best_model is None:
+                            st.error("❌ Loaded models but best_model is None. Models may be corrupted.")
+                            st.write(f"Predictor attributes: {dir(self.predictor)}")
+                            self.models_loaded = False
+                            return False
+                        
                         self.models_loaded = True
                         st.success(f"✅ Models loaded successfully! Using: {self.best_model_name}")
                         return True
@@ -1830,38 +1840,42 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
             return df
 
     def make_prediction(self, features):
-        """Make prediction using the loaded best_model."""
+        """Make real predictions using the loaded model."""
         try:
-            if not self.models_loaded or not self.predictor or self.best_model is None:
-                st.error("Models not loaded")
+            # Validate setup
+            if not self.models_loaded or self.best_model is None or self.scaler is None:
+                st.error("❌ Models not properly loaded. Please refresh.")
+                with st.expander("🔍 Debug Info"):
+                    st.write({
+                        "models_loaded": self.models_loaded,
+                        "best_model_exists": self.best_model is not None,
+                        "scaler_exists": self.scaler is not None,
+                        "best_model_name": getattr(self, 'best_model_name', 'N/A')
+                    })
                 return None
             
-            # Convert features to DataFrame
+            # Convert to DataFrame
             feature_df = pd.DataFrame([features])
-            feature_df_proc = self.apply_feature_engineering(feature_df)
             
-            # Align features with training data
+            # Align with training features
             if hasattr(self.predictor, 'feature_names') and self.predictor.feature_names:
                 expected = self.predictor.feature_names
-                for c in set(expected) - set(feature_df_proc.columns):
-                    feature_df_proc[c] = 0
-                for c in set(feature_df_proc.columns) - set(expected):
-                    feature_df_proc = feature_df_proc.drop(columns=[c])
-                feature_df_proc = feature_df_proc[expected]
+                for c in set(expected) - set(feature_df.columns):
+                    feature_df[c] = 0
+                for c in set(feature_df.columns) - set(expected):
+                    feature_df = feature_df.drop(columns=[c])
+                feature_df = feature_df[expected]
             
             # Scale
-            if hasattr(self, 'scaler') and self.scaler is not None:
-                X_scaled = self.scaler.transform(feature_df_proc)
-            else:
-                X_scaled = feature_df_proc.values
+            X_scaled = self.scaler.transform(feature_df)
             
-            # Predict with best_model
+            # Predict
             prediction = self.best_model.predict(X_scaled)
-            probability = self.best_model.predict_proba(X_scaled) if hasattr(self.best_model, 'predict_proba') else None
+            pred = int(prediction[0]) if hasattr(prediction, '__len__') else int(prediction)
             
-            pred = prediction[0] if hasattr(prediction, '__len__') else prediction
-            
-            if probability is not None:
+            # Get probability
+            if hasattr(self.best_model, 'predict_proba'):
+                probability = self.best_model.predict_proba(X_scaled)
                 if hasattr(probability[0], '__len__'):
                     prob = float(probability[0][1]) if len(probability[0]) > 1 else float(probability[0][0])
                 else:
@@ -1982,7 +1996,7 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
     def run(self):
         """Main application runner."""
         # Header
-        st.markdown('<h1 class="main-header">❤️ Heart Disease Prediction</h1>', unsafe_allow_html=True)
+        st.markdown('<h1 class="main-header">❤️ CardioCheck.AI</h1>', unsafe_allow_html=True)
         st.markdown('<p class="sub-header">Advanced AI-powered cardiovascular risk assessment</p>', unsafe_allow_html=True)
 
         # Optional cache clear on deploy (set env CLEAR_CACHE_ON_START=1)
