@@ -1998,14 +1998,18 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
         # Header
         st.markdown('<h1 class="main-header">❤️ CardioCheck.AI</h1>', unsafe_allow_html=True)
         st.markdown('<p class="sub-header">Advanced AI-powered cardiovascular risk assessment</p>', unsafe_allow_html=True)
-
-        # Optional cache clear on deploy (set env CLEAR_CACHE_ON_START=1)
-        try:
-            if os.environ.get("CLEAR_CACHE_ON_START") == "1":
+        
+        # Version indicator
+        st.caption("🔄 v2024.12.16.2 | Predictions & SHAP Active")
+        
+        # Force cache clear on first run
+        if 'cache_cleared' not in st.session_state:
+            try:
                 st.cache_data.clear()
                 st.cache_resource.clear()
-        except Exception:
-            pass
+                st.session_state.cache_cleared = True
+            except Exception:
+                pass
         
         # Load models
         if not self.models_loaded:
