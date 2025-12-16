@@ -1,6 +1,4 @@
-# Heart Disease Prediction - Streamlit App (locked to compatible versions)
-# CRITICAL: These exact versions match the training environment
-# Do NOT upgrade without retraining models
+--constraint constraints.txt
 
 numpy==1.26.4
 pandas==2.0.3
