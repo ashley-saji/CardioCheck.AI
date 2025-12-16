@@ -1,17 +1,17 @@
 --constraint constraints.txt
 
-numpy==1.26.4
-pandas==2.0.3
-scikit-learn==1.3.2
-imbalanced-learn==0.10.1
-scipy==1.11.4
-joblib==1.3.2
-xgboost==1.7.6
-shap==0.44.1
-matplotlib==3.7.3
-seaborn==0.12.2
-plotly==5.18.0
-streamlit==1.29.0
-reportlab==4.0.7
-pillow==10.0.1
-tqdm==4.66.1
+numpy>=1.23.5,<2.0.0
+pandas>=2.0.0,<2.3.0
+scikit-learn>=1.3.0,<1.6.0
+imbalanced-learn>=0.10.0,<0.13.0
+scipy>=1.11.0,<1.15.0
+joblib>=1.3.0,<1.5.0
+xgboost>=1.7.0,<3.0.0
+shap>=0.44.0,<0.47.0
+matplotlib>=3.7.0,<3.10.0
+seaborn>=0.12.0,<0.14.0
+plotly>=5.18.0,<5.25.0
+streamlit>=1.29.0,<1.42.0
+reportlab>=4.0.0,<4.3.0
+pillow>=10.0.0,<11.0.0
+tqdm>=4.66.0,<5.0.0

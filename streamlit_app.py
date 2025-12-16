@@ -52,29 +52,20 @@ try:
     PDF_AVAILABLE = True
 except ImportError:
     PDF_AVAILABLE = False
-    st.error("⚠️ ReportLab not available. PDF generation disabled.")
 
-# Custom modules
+# Custom modules - import at module level without st. calls
+OPTIMIZED_MODEL_AVAILABLE = False
+REGULAR_MODEL_AVAILABLE = False
+
 try:
     from models.heart_disease_prediction_optimized import OptimizedHeartDiseasePredictor
     OPTIMIZED_MODEL_AVAILABLE = True
-    st.success("✅ OptimizedHeartDiseasePredictor imported successfully")
-except ImportError as e:
-    OPTIMIZED_MODEL_AVAILABLE = False
-    st.error(f"❌ Failed to import OptimizedHeartDiseasePredictor: {e}")
+except ImportError:
     try:
         from models.heart_disease_prediction import HeartDiseasePredictor
         REGULAR_MODEL_AVAILABLE = True
-        st.success("✅ HeartDiseasePredictor (regular) imported successfully")
-    except ImportError as e2:
-        REGULAR_MODEL_AVAILABLE = False
-        st.error(f"❌ Failed to import HeartDiseasePredictor: {e2}")
-except Exception as e:
-    OPTIMIZED_MODEL_AVAILABLE = False
-    REGULAR_MODEL_AVAILABLE = False
-    st.error(f"❌ Unexpected error importing models: {e}")
-    import traceback
-    st.code(traceback.format_exc())
+    except ImportError:
+        pass
 
 warnings.filterwarnings('ignore')
 
@@ -1638,18 +1629,11 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
     def load_models(self):
         """Load the trained models and preprocessing objects."""
         try:
-            import sys
-            import sklearn
-            st.info(f"🔍 Debug: Python {sys.version_info.major}.{sys.version_info.minor}, scikit-learn {sklearn.__version__}")
-            
-            # Use REGULAR model since OptimizedHeartDiseasePredictor has import issues
+            # Use REGULAR model since it has the load_models method now
             if REGULAR_MODEL_AVAILABLE:
-                st.info("📦 Loading HeartDiseasePredictor (regular)...")
                 self.predictor = HeartDiseasePredictor()
                 if hasattr(self.predictor, 'load_models'):
-                    st.info("🔄 Calling load_models()...")
                     loaded_ok = self.predictor.load_models()
-                    st.info(f"📊 load_models returned: {loaded_ok}")
                     
                     if loaded_ok:
                         self.best_model = getattr(self.predictor, 'best_model', None)
@@ -1658,19 +1642,43 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
                         self.feature_selector = getattr(self.predictor, 'feature_selector', None)
                         self.selected_features = getattr(self.predictor, 'selected_features', None)
                         self.models_loaded = True
-                        st.success(f"✅ Models loaded! Best model: {self.best_model_name}")
+                        st.success(f"✅ Models loaded successfully! Using: {self.best_model_name}")
+                        return True
                     else:
-                        st.error(f"❌ load_models() returned False")
+                        st.error("❌ Failed to load models from disk")
+                        return False
                 else:
                     st.error("❌ Predictor has no load_models method")
+                    return False
+            elif OPTIMIZED_MODEL_AVAILABLE:
+                # Try optimized model as fallback
+                self.predictor = OptimizedHeartDiseasePredictor()
+                if hasattr(self.predictor, 'load_models'):
+                    loaded_ok = self.predictor.load_models('optimized_models')
+                    
+                    if loaded_ok:
+                        self.best_model = getattr(self.predictor, 'best_model_instance', None)
+                        self.best_model_name = getattr(self.predictor, 'best_model', 'Unknown')
+                        self.scaler = getattr(self.predictor, 'scaler', None)
+                        self.feature_selector = getattr(self.predictor, 'feature_selector', None)
+                        self.selected_features = getattr(self.predictor, 'selected_features', None)
+                        self.models_loaded = True
+                        st.success(f"✅ Optimized models loaded! Using: {self.best_model_name}")
+                        return True
+                    else:
+                        st.error("❌ Failed to load optimized models")
+                        return False
             else:
                 st.error("❌ No model modules available")
+                return False
                 
         except Exception as e:
-            import traceback
             st.error(f"❌ Error loading models: {str(e)}")
-            st.code(traceback.format_exc())
+            with st.expander("🔍 Error Details"):
+                import traceback
+                st.code(traceback.format_exc())
             self.models_loaded = False
+            return False
 
     def display_environment_info(self):
         """Show runtime environment details for troubleshooting deployments."""

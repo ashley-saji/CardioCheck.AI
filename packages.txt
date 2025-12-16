@@ -1,1 +1,1 @@
-python3.11-dev
+python3-dev

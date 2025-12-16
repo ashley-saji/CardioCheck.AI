@@ -450,6 +450,190 @@ class HeartDiseasePredictor:
         # Save feature names
         joblib.dump(self.feature_names, f"{save_dir}/feature_names.joblib")
         print("✅ Saved feature names")
+    
+    def load_models(self, model_dir='saved_models'):
+        """
+        Load pre-trained models and preprocessing components.
+        
+        Args:
+            model_dir: Directory containing saved models
+            
+        Returns:
+            bool: True if models loaded successfully, False otherwise
+        """
+        try:
+            print(f"📂 Loading models from {model_dir}/...")
+            
+            # Load scaler
+            scaler_path = os.path.join(model_dir, 'scaler.joblib')
+            if os.path.exists(scaler_path):
+                self.scaler = joblib.load(scaler_path)
+                print("✅ Scaler loaded successfully")
+            else:
+                print(f"⚠️ Scaler not found at {scaler_path}")
+                return False
+            
+            # Load feature names
+            feature_names_path = os.path.join(model_dir, 'feature_names.joblib')
+            if os.path.exists(feature_names_path):
+                self.feature_names = joblib.load(feature_names_path)
+                print("✅ Feature names loaded successfully")
+            
+            # Load individual models
+            model_files = {
+                'Random Forest': 'random_forest_model.joblib',
+                'XGBoost': 'xgboost_model.joblib',
+                'Gradient Boosting': 'gradient_boosting_model.joblib',
+                'Neural Network': 'neural_network_model.joblib',
+                'SVM': 'svm_model.joblib',
+                'Logistic Regression': 'logistic_regression_model.joblib',
+                'Decision Tree': 'decision_tree_model.joblib',
+                'Naive Bayes': 'naive_bayes_model.joblib',
+                'K-Nearest Neighbors': 'k-nearest_neighbors_model.joblib',
+                'Ensemble': 'ensemble_model.joblib'
+            }
+            
+            # Priority order for best model selection
+            priority_models = ['Ensemble', 'Random Forest', 'XGBoost', 'Gradient Boosting']
+            
+            loaded_count = 0
+            best_priority = 999
+            
+            for model_name, filename in model_files.items():
+                model_path = os.path.join(model_dir, filename)
+                if os.path.exists(model_path):
+                    try:
+                        model = joblib.load(model_path)
+                        self.models[model_name] = model
+                        print(f"✅ {model_name} loaded successfully")
+                        loaded_count += 1
+                        
+                        # Select best model based on priority
+                        if model_name in priority_models:
+                            priority = priority_models.index(model_name)
+                            if priority < best_priority:
+                                best_priority = priority
+                                self.best_model = model
+                                self.best_model_name = model_name
+                        elif self.best_model is None:
+                            # If no priority model loaded yet, use this one
+                            self.best_model = model
+                            self.best_model_name = model_name
+                            
+                    except (ModuleNotFoundError, AttributeError) as e:
+                        # Silently skip incompatible models (version mismatch)
+                        pass
+                    except Exception as e:
+                        # Log other errors but continue
+                        print(f"⚠️ Skipping {model_name}: compatibility issue")
+            
+            if loaded_count == 0:
+                print(f"❌ No models found in {model_dir}")
+                return False
+            
+            print(f"✅ Successfully loaded {loaded_count} model(s)")
+            if hasattr(self, 'best_model_name'):
+                print(f"🏆 Best model: {self.best_model_name}")
+            
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error loading models: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    def apply_feature_engineering(self, X):
+        """
+        Apply basic feature engineering for new data (compatibility wrapper for Streamlit app).
+        
+        Args:
+            X: Input DataFrame
+            
+        Returns:
+            X_processed: Processed DataFrame
+        """
+        # For the regular predictor, we don't do complex feature engineering
+        # Just return the data as-is since the models were trained on raw features
+        return X.copy()
+    
+    def predict(self, X):
+        """
+        Make predictions using the best model.
+        
+        Args:
+            X: Input features as DataFrame
+            
+        Returns:
+            predictions: Array of predictions
+        """
+        if self.best_model is None:
+            raise ValueError("No model loaded. Call load_models() first.")
+        
+        # Preprocess
+        X_processed = self.apply_feature_engineering(X)
+        
+        # Ensure columns match training data
+        if self.feature_names is not None:
+            # Keep only the features used during training
+            missing_cols = set(self.feature_names) - set(X_processed.columns)
+            extra_cols = set(X_processed.columns) - set(self.feature_names)
+            
+            # Add missing columns with default values
+            for col in missing_cols:
+                X_processed[col] = 0
+            
+            # Remove extra columns
+            if extra_cols:
+                X_processed = X_processed.drop(columns=list(extra_cols))
+            
+            # Reorder to match training
+            X_processed = X_processed[self.feature_names]
+        
+        X_scaled = self.scaler.transform(X_processed)
+        
+        return self.best_model.predict(X_scaled)
+    
+    def predict_proba(self, X):
+        """
+        Predict probabilities using the best model.
+        
+        Args:
+            X: Input features as DataFrame
+            
+        Returns:
+            probabilities: Array of prediction probabilities
+        """
+        if self.best_model is None:
+            raise ValueError("No model loaded. Call load_models() first.")
+        
+        # Preprocess
+        X_processed = self.apply_feature_engineering(X)
+        
+        # Ensure columns match training data
+        if self.feature_names is not None:
+            # Keep only the features used during training
+            missing_cols = set(self.feature_names) - set(X_processed.columns)
+            extra_cols = set(X_processed.columns) - set(self.feature_names)
+            
+            # Add missing columns with default values
+            for col in missing_cols:
+                X_processed[col] = 0
+            
+            # Remove extra columns
+            if extra_cols:
+                X_processed = X_processed.drop(columns=list(extra_cols))
+            
+            # Reorder to match training
+            X_processed = X_processed[self.feature_names]
+        
+        X_scaled = self.scaler.transform(X_processed)
+        
+        if hasattr(self.best_model, 'predict_proba'):
+            return self.best_model.predict_proba(X_scaled)
+        else:
+            # Fallback for models without predict_proba
+            return self.best_model.decision_function(X_scaled)
 
 
 def main():
