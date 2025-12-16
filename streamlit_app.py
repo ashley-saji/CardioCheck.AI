@@ -1666,6 +1666,27 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
                         st.success(f"✅ Models loaded successfully! Using: {self.best_model_name}")
                         return True
             
+            # If loading pre-trained models failed, attempt on-cloud training from data
+            if REGULAR_MODEL_AVAILABLE:
+                with st.spinner("🔧 Pre-trained models not found. Training models on server (one-time setup)..."):
+                    trained_ok = self.train_models_on_cloud()
+                    if trained_ok:
+                        # Try loading again after training
+                        reloaded_ok = self.predictor.load_models()
+                        if reloaded_ok:
+                            self.best_model = getattr(self.predictor, 'best_model', None)
+                            self.best_model_name = getattr(self.predictor, 'best_model_name', 'Unknown')
+                            self.scaler = getattr(self.predictor, 'scaler', None)
+                            self.feature_selector = getattr(self.predictor, 'feature_selector', None)
+                            self.selected_features = getattr(self.predictor, 'selected_features', None)
+                            self.models_loaded = True
+                            st.success(f"✅ Models trained and loaded! Using: {self.best_model_name}")
+                            return True
+                        else:
+                            st.error("❌ Training completed but failed to reload models.")
+                    else:
+                        st.error("❌ Failed to train models on server.")
+
             # Fallback to OPTIMIZED model if regular fails
             if OPTIMIZED_MODEL_AVAILABLE:
                 self.predictor = OptimizedHeartDiseasePredictor()
@@ -1692,6 +1713,49 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
                 import traceback
                 st.code(traceback.format_exc())
             self.models_loaded = False
+            return False
+
+    def train_models_on_cloud(self):
+        """Train all models from the bundled dataset when pre-trained artifacts are unavailable.
+
+        This ensures first-time deployments and fresh environments can self-initialize.
+        """
+        try:
+            if not REGULAR_MODEL_AVAILABLE:
+                st.error("Regular predictor unavailable for training.")
+                return False
+
+            data_path = "data/heart_disease_uci.csv"
+            if not os.path.exists(data_path):
+                st.error("Dataset not found. Cannot train models.")
+                return False
+
+            # Load and preprocess data via predictor API
+            X, y = self.predictor.load_and_preprocess_data(data_path)
+            if X is None or y is None:
+                st.error("Failed to load data for training.")
+                return False
+
+            from sklearn.model_selection import train_test_split
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=42, stratify=y
+            )
+
+            # Train all models and ensemble
+            self.predictor.train_models(X_train, y_train, X_test, y_test)
+            self.predictor.create_ensemble_model(X_train, y_train, X_test, y_test)
+
+            # Persist artifacts to saved_models/ for future fast loads
+            self.predictor.save_models(save_dir='saved_models')
+
+            # Capture feature names for alignment in app
+            self.selected_features = getattr(self.predictor, 'feature_names', None)
+
+            return True
+        except Exception as e:
+            with st.expander("🔍 Training Error Details"):
+                import traceback
+                st.code(traceback.format_exc())
             return False
 
     def display_environment_info(self):
