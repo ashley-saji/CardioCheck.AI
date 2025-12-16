@@ -1628,23 +1628,29 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
     def load_models(self):
         """Load the trained models and preprocessing objects."""
         try:
+            import sys
+            import sklearn
+            st.info(f"🔍 Debug: Python {sys.version_info.major}.{sys.version_info.minor}, scikit-learn {sklearn.__version__}")
+            
             if OPTIMIZED_MODEL_AVAILABLE:
+                st.info("📦 Loading OptimizedHeartDiseasePredictor...")
                 self.predictor = OptimizedHeartDiseasePredictor()
                 if hasattr(self.predictor, 'load_models'):
+                    st.info("🔄 Calling load_models()...")
                     loaded_ok = self.predictor.load_models()
-                    if hasattr(self.predictor, 'best_model_instance'):
+                    st.info(f"📊 load_models returned: {loaded_ok}")
+                    
+                    if hasattr(self.predictor, 'best_model_instance') and self.predictor.best_model_instance:
                         self.best_model = self.predictor.best_model_instance
                         self.best_model_name = getattr(self.predictor, 'best_model', 'Unknown')
                         self.scaler = getattr(self.predictor, 'scaler', None)
                         self.feature_selector = getattr(self.predictor, 'feature_selector', None)
                         self.selected_features = getattr(self.predictor, 'selected_features', None)
                         self.models_loaded = True
-                        st.success("✅ Optimized models loaded successfully!")
+                        st.success(f"✅ Models loaded! Best model: {self.best_model_name}")
                     else:
-                        if not loaded_ok:
-                            st.error("❌ Failed to load optimized models (possible version mismatch). Try redeploying with pinned requirements.")
-                        else:
-                            st.error("❌ Failed to load optimized models")
+                        st.error(f"❌ best_model_instance is None or missing. loaded_ok={loaded_ok}")
+                        st.error(f"🔍 Predictor attrs: {dir(self.predictor)}")
             elif REGULAR_MODEL_AVAILABLE:
                 self.predictor = HeartDiseasePredictor()
                 if hasattr(self.predictor, 'load_models'):
@@ -1655,9 +1661,12 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
                     st.error("❌ Failed to load models")
             else:
                 st.error("❌ No model modules available")
+                st.error(f"OPTIMIZED_MODEL_AVAILABLE={OPTIMIZED_MODEL_AVAILABLE}, REGULAR_MODEL_AVAILABLE={REGULAR_MODEL_AVAILABLE}")
                 
         except Exception as e:
+            import traceback
             st.error(f"❌ Error loading models: {str(e)}")
+            st.code(traceback.format_exc())
             self.models_loaded = False
 
     def display_environment_info(self):
