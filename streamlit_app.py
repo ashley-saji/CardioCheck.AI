@@ -57,15 +57,18 @@ except ImportError:
 OPTIMIZED_MODEL_AVAILABLE = False
 REGULAR_MODEL_AVAILABLE = False
 
+# Try importing both modules independently to allow flexible fallbacks
 try:
     from models.heart_disease_prediction_optimized import OptimizedHeartDiseasePredictor
     OPTIMIZED_MODEL_AVAILABLE = True
 except ImportError:
-    try:
-        from models.heart_disease_prediction import HeartDiseasePredictor
-        REGULAR_MODEL_AVAILABLE = True
-    except ImportError:
-        pass
+    OPTIMIZED_MODEL_AVAILABLE = False
+
+try:
+    from models.heart_disease_prediction import HeartDiseasePredictor
+    REGULAR_MODEL_AVAILABLE = True
+except ImportError:
+    REGULAR_MODEL_AVAILABLE = False
 
 warnings.filterwarnings('ignore')
 
@@ -1772,6 +1775,10 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
                     "shap": _shap.__version__,
                     "xgboost": _xgb.__version__,
                     "streamlit": st.__version__,
+                    "regular_model_available": REGULAR_MODEL_AVAILABLE,
+                    "optimized_model_available": OPTIMIZED_MODEL_AVAILABLE,
+                    "models_loaded": getattr(self, 'models_loaded', False),
+                    "best_model_name": getattr(self, 'best_model_name', None),
                 })
             except Exception as e:
                 st.write(f"Env info unavailable: {e}")
