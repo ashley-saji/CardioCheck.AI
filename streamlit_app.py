@@ -58,13 +58,23 @@ except ImportError:
 try:
     from models.heart_disease_prediction_optimized import OptimizedHeartDiseasePredictor
     OPTIMIZED_MODEL_AVAILABLE = True
-except ImportError:
+    st.success("✅ OptimizedHeartDiseasePredictor imported successfully")
+except ImportError as e:
     OPTIMIZED_MODEL_AVAILABLE = False
+    st.error(f"❌ Failed to import OptimizedHeartDiseasePredictor: {e}")
     try:
         from models.heart_disease_prediction import HeartDiseasePredictor
         REGULAR_MODEL_AVAILABLE = True
-    except ImportError:
+        st.success("✅ HeartDiseasePredictor (regular) imported successfully")
+    except ImportError as e2:
         REGULAR_MODEL_AVAILABLE = False
+        st.error(f"❌ Failed to import HeartDiseasePredictor: {e2}")
+except Exception as e:
+    OPTIMIZED_MODEL_AVAILABLE = False
+    REGULAR_MODEL_AVAILABLE = False
+    st.error(f"❌ Unexpected error importing models: {e}")
+    import traceback
+    st.code(traceback.format_exc())
 
 warnings.filterwarnings('ignore')
 
