@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cardiocheck-ai"
+version = "1.0.0"
+description = "AI-powered heart disease prediction with SHAP analysis"
+requires-python = ">=3.11"
+
+[tool.setuptools]
+packages = ["models"]
+
+[tool.streamlit]
+# Force Streamlit Cloud to use exact versions from requirements.txt
+pythonVersion = "3.11"
