@@ -1,2 +1,6 @@
 *.pyc
 __pycache__/
+
+# Model files - will be generated on cloud
+saved_models/*.joblib
+optimized_models/*.joblib
