@@ -222,31 +222,63 @@ class HeartDiseaseWebApp:
             # Get background data first
             background_data = self.get_background_data()
             
-            # Use different explainers based on model type
-            if hasattr(self.best_model, 'predict_proba'):
-                model_type = type(self.best_model).__name__
-                
-                if 'Tree' in model_type or 'Forest' in model_type or 'XGB' in model_type or 'Gradient' in model_type:
-                    # Tree-based models work well with TreeExplainer
-                    try:
-                        self.shap_explainer = shap.TreeExplainer(self.best_model)
-                    except:
-                        # Fallback to general explainer
-                        self.shap_explainer = shap.Explainer(self.best_model.predict_proba, background_data)
-                else:
-                    # For Neural Networks, SVM, etc., use general explainer
-                    self.shap_explainer = shap.Explainer(self.best_model.predict_proba, background_data)
-            else:
-                # For models without predict_proba
-                self.shap_explainer = shap.Explainer(self.best_model.predict, background_data)
+            if background_data is None or len(background_data) == 0:
+                st.warning("⚠️ Could not load background data for SHAP")
+                return False
             
-            self.shap_initialized = True
-            return True
+            # Use different explainers based on model type
+            model_type = type(self.best_model).__name__
+            
+            # Handle VotingClassifier (Ensemble) - use one of its estimators
+            if 'Voting' in model_type or 'Ensemble' in model_name:
+                # For ensemble models, use the first tree-based estimator if available
+                if hasattr(self.best_model, 'estimators_'):
+                    for estimator in self.best_model.estimators_:
+                        estimator_type = type(estimator).__name__
+                        if 'Forest' in estimator_type or 'Tree' in estimator_type or 'XGB' in estimator_type:
+                            try:
+                                self.shap_explainer = shap.TreeExplainer(estimator)
+                                self.shap_initialized = True
+                                return True
+                            except:
+                                continue
+                # Fallback to kernel explainer for ensemble
+                self.shap_explainer = shap.KernelExplainer(
+                    self.best_model.predict_proba, 
+                    background_data[:20]  # Use smaller sample for speed
+                )
+                self.shap_initialized = True
+                return True
+            
+            # Tree-based models - use TreeExplainer
+            elif 'Tree' in model_type or 'Forest' in model_type or 'XGB' in model_type or 'Gradient' in model_type:
+                try:
+                    self.shap_explainer = shap.TreeExplainer(self.best_model)
+                    self.shap_initialized = True
+                    return True
+                except Exception as e:
+                    # Fallback to kernel explainer
+                    self.shap_explainer = shap.KernelExplainer(
+                        self.best_model.predict_proba, 
+                        background_data[:20]
+                    )
+                    self.shap_initialized = True
+                    return True
+            
+            # Other models - use KernelExplainer (slower but universal)
+            else:
+                self.shap_explainer = shap.KernelExplainer(
+                    self.best_model.predict_proba if hasattr(self.best_model, 'predict_proba') else self.best_model.predict,
+                    background_data[:20]
+                )
+                self.shap_initialized = True
+                return True
             
         except Exception as e:
-            # Only show error in debug mode, not in production
-            if hasattr(self, 'debug_mode') and self.debug_mode:
-                st.error(f"SHAP initialization failed: {e}")
+            st.error(f"❌ SHAP initialization failed: {str(e)}")
+            import traceback
+            with st.expander("🔍 Debug Info"):
+                st.code(traceback.format_exc())
             self.shap_initialized = False
             return False
     
@@ -257,40 +289,33 @@ class HeartDiseaseWebApp:
             data_path = "data/heart_disease_uci.csv"
             if os.path.exists(data_path):
                 df = pd.read_csv(data_path)
-                # Remove target column and any ID columns
-                feature_cols = [col for col in df.columns if col not in ['target', 'id', 'dataset']]
+                # Remove target columns
+                feature_cols = [col for col in df.columns if col not in ['target', 'num', 'id', 'dataset']]
                 background_raw = df[feature_cols].sample(min(100, len(df)), random_state=42)
                 
                 # Apply same preprocessing pipeline as predictions
                 background_processed = self.apply_feature_engineering(background_raw)
                 
-                # Apply feature selection if available
-                if hasattr(self, 'feature_selector') and self.feature_selector is not None:
-                    try:
-                        background_selected = self.feature_selector.transform(background_processed)
-                        background_scaled = self.scaler.transform(background_selected)
-                        return background_scaled[:50]  # Use first 50 for efficiency
-                    except Exception as e:
-                        # Silently fall back to direct scaling
-                        pass
-                        
-                # Fallback: use scaler directly if feature selector fails
+                # Use scaler to transform
                 if hasattr(self, 'scaler') and self.scaler is not None:
-                    # Ensure we have the same columns as expected by scaler
-                    expected_features = getattr(self.scaler, 'feature_names_in_', None)
+                    # Get expected features from predictor
+                    expected_features = None
+                    if hasattr(self.predictor, 'feature_names') and self.predictor.feature_names is not None:
+                        expected_features = self.predictor.feature_names
+                    elif hasattr(self.scaler, 'feature_names_in_'):
+                        expected_features = self.scaler.feature_names_in_
+                    
                     if expected_features is not None:
-                        # Reorder columns to match training order
+                        # Align columns to match training
                         missing_cols = set(expected_features) - set(background_processed.columns)
                         extra_cols = set(background_processed.columns) - set(expected_features)
                         
                         if missing_cols:
-                            # Add missing columns with default values
                             for col in missing_cols:
                                 background_processed[col] = 0
                         
                         if extra_cols:
-                            # Remove extra columns
-                            background_processed = background_processed.drop(columns=extra_cols)
+                            background_processed = background_processed.drop(columns=list(extra_cols))
                         
                         # Reorder to match training
                         background_processed = background_processed[expected_features]
@@ -298,18 +323,13 @@ class HeartDiseaseWebApp:
                     background_scaled = self.scaler.transform(background_processed)
                     return background_scaled[:50]
                 else:
-                    # Create synthetic background data with appropriate shape
-                    n_features = len(self.selected_features) if hasattr(self, 'selected_features') and self.selected_features else 16
-                    return np.random.normal(0, 1, (50, n_features))
+                    return None
             else:
-                # Create synthetic background data with appropriate shape
-                n_features = len(self.selected_features) if hasattr(self, 'selected_features') and self.selected_features else 16
-                return np.random.normal(0, 1, (50, n_features))
+                return None
                 
         except Exception as e:
-            # Fallback with appropriate shape
-            n_features = len(self.selected_features) if hasattr(self, 'selected_features') and self.selected_features else 16
-            return np.random.normal(0, 1, (10, n_features))
+            st.warning(f"⚠️ Could not load background data: {str(e)}")
+            return None
     
     def generate_shap_explanation(self, features):
         """Generate SHAP explanation for a single prediction."""
@@ -320,33 +340,31 @@ class HeartDiseaseWebApp:
             
             # Prepare feature data
             feature_df = pd.DataFrame([features])
-            feature_df_processed = self.apply_feature_engineering(feature_df)
             
-            # Apply same preprocessing as training
-            if hasattr(self, 'feature_selector') and self.feature_selector is not None:
-                try:
-                    features_selected = self.feature_selector.transform(feature_df_processed)
-                    features_scaled = self.scaler.transform(features_selected)
-                except Exception as e:
-                    # Fallback: ensure correct shape for scaler
-                    expected_features = getattr(self.scaler, 'feature_names_in_', None)
-                    if expected_features is not None:
-                        # Align features with training data
-                        missing_cols = set(expected_features) - set(feature_df_processed.columns)
-                        extra_cols = set(feature_df_processed.columns) - set(expected_features)
-                        
-                        if missing_cols:
-                            for col in missing_cols:
-                                feature_df_processed[col] = 0
-                        
-                        if extra_cols:
-                            feature_df_processed = feature_df_processed.drop(columns=extra_cols)
-                        
-                        feature_df_processed = feature_df_processed[expected_features]
-                    
-                    features_scaled = self.scaler.transform(feature_df_processed)
-            else:
-                features_scaled = self.scaler.transform(feature_df_processed)
+            # Get expected features from predictor
+            expected_features = None
+            if hasattr(self.predictor, 'feature_names') and self.predictor.feature_names is not None:
+                expected_features = self.predictor.feature_names
+            elif hasattr(self.scaler, 'feature_names_in_'):
+                expected_features = self.scaler.feature_names_in_
+            
+            if expected_features is not None:
+                # Align features with training data
+                missing_cols = set(expected_features) - set(feature_df.columns)
+                extra_cols = set(feature_df.columns) - set(expected_features)
+                
+                if missing_cols:
+                    for col in missing_cols:
+                        feature_df[col] = 0
+                
+                if extra_cols:
+                    feature_df = feature_df.drop(columns=list(extra_cols))
+                
+                # Reorder to match training
+                feature_df = feature_df[expected_features]
+            
+            # Apply scaler
+            features_scaled = self.scaler.transform(feature_df)
             
             # Calculate SHAP values
             shap_values = self.shap_explainer(features_scaled)
@@ -354,7 +372,10 @@ class HeartDiseaseWebApp:
             return shap_values
             
         except Exception as e:
-            # Return None for failed SHAP generation
+            st.error(f"❌ SHAP generation failed: {str(e)}")
+            import traceback
+            with st.expander("🔍 Debug Info"):
+                st.code(traceback.format_exc())
             return None
     
     def create_shap_waterfall_chart(self, shap_values, feature_names, base_value):
