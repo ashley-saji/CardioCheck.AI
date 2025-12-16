@@ -1525,21 +1525,45 @@ class HeartDiseaseWebApp:
             st.error(f"❌ Email test failed: {str(e)}")
             st.info("💡 Make sure 2FA is enabled and you're using a Gmail App Password.")
 
+    def get_email_settings(self):
+        """Retrieve permanent email settings from Streamlit secrets or fallback file."""
+        # Prefer Streamlit secrets for production
+        try:
+            if 'email' in st.secrets:
+                sec = st.secrets['email']
+                return {
+                    'sender_email': sec.get('sender_email'),
+                    'sender_password': sec.get('sender_password'),
+                    'sender_name': sec.get('sender_name', 'Heart Disease Prediction System')
+                }
+        except Exception:
+            pass
+
+        # Fallback to local JSON if secrets are not set
+        cfg = self.load_email_config()
+        return {
+            'sender_email': cfg.get('sender_email'),
+            'sender_password': cfg.get('sender_password'),
+            'sender_name': cfg.get('sender_name', 'Heart Disease Prediction System')
+        }
+
     def send_email_report(self, pdf_buffer, patient_email, patient_name):
-        """Send PDF report via email."""
+        """Send PDF report via email using permanent configuration."""
         if not patient_email:
             st.error("No email address provided")
             return False
         
         try:
-            # Get email configuration
-            patient_info = st.session_state.patient_info
-            sender_email = patient_info.get('sender_email')
-            sender_password = patient_info.get('sender_password')
-            sender_name = patient_info.get('sender_name', 'Heart Disease Prediction System')
+            # Use permanent email settings
+            settings = self.get_email_settings()
+            sender_email = settings.get('sender_email')
+            sender_password = settings.get('sender_password')
+            sender_name = settings.get('sender_name')
             
             if not sender_email or not sender_password:
-                st.error("❌ Email configuration not found. Please configure email settings in the sidebar first.")
+                st.error("❌ Email configuration not found. Please set Streamlit secrets for email.")
+                with st.expander("Email setup instructions"):
+                    st.markdown("Set `[email] sender_email`, `sender_password`, `sender_name` in Streamlit Cloud Secrets.")
                 return False
             
             with st.spinner(f"Sending report to {patient_email}..."):
@@ -1603,7 +1627,6 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
                 server.quit()
                 
                 st.success(f"✅ Report successfully sent to {patient_email}")
-                st.info(f"📧 Email sent from: {sender_email}")
                 return True
                 
         except smtplib.SMTPAuthenticationError:
@@ -1832,8 +1855,38 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
             
             # Fallback prediction method
             if hasattr(self.predictor, 'predict'):
-                prediction = self.predictor.predict(feature_df)
-                probability = getattr(self.predictor, 'predict_proba', lambda x: [0.5])(feature_df)
+                try:
+                    prediction = self.predictor.predict(feature_df)
+                    probability = getattr(self.predictor, 'predict_proba', lambda x: [0.5])(feature_df)
+                except Exception as e:
+                    # Some sklearn/xgboost combinations can raise attribute errors (e.g., monotonic_cst)
+                    # Fall back to a stable model (Random Forest or XGBoost) to ensure prediction succeeds
+                    fallback_model = None
+                    if hasattr(self.predictor, 'models') and isinstance(self.predictor.models, dict):
+                        fallback_model = self.predictor.models.get('Random Forest') or self.predictor.models.get('XGBoost')
+                    if fallback_model is not None and hasattr(self.predictor, 'scaler'):
+                        X = feature_df.copy()
+                        expected = getattr(self.predictor, 'feature_names', None)
+                        if expected is not None:
+                            missing = set(expected) - set(X.columns)
+                            extra = set(X.columns) - set(expected)
+                            for c in missing:
+                                X[c] = 0
+                            if extra:
+                                X = X.drop(columns=list(extra))
+                            X = X[expected]
+                        Xs = self.predictor.scaler.transform(X)
+                        try:
+                            prediction = fallback_model.predict(Xs)
+                            probability = fallback_model.predict_proba(Xs) if hasattr(fallback_model, 'predict_proba') else [0.5]
+                            # Update best model context to reflect fallback
+                            self.best_model = fallback_model
+                            self.best_model_name = type(fallback_model).__name__
+                        except Exception as e2:
+                            raise e2
+                    else:
+                        # If no fallback available, re-raise original error for display
+                        raise e
                 
                 if hasattr(probability, '__len__') and len(probability) > 0:
                     if hasattr(probability[0], '__len__'):
@@ -1891,7 +1944,7 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
             return None
 
     def create_sidebar(self):
-        """Create sidebar with input parameters and email configuration."""
+        """Create sidebar with input parameters (email config removed)."""
         st.sidebar.header("👤 Patient Information")
         
         # Patient info
@@ -1964,92 +2017,7 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
         thal_mapping = {"Normal": 1, "Fixed Defect": 2, "Reversible Defect": 3}
         features['thal'] = thal_mapping[features['thal']]
         
-        # Email Configuration Section
-        st.sidebar.markdown("---")
-        st.sidebar.header("📧 Email Configuration")
-        
-        # Load saved email config
-        email_config = self.load_email_config()
-        
-        # Display current status
-        if email_config and email_config.get('sender_email'):
-            st.sidebar.success(f"✅ Configured: {email_config['sender_email']}")
-        else:
-            st.sidebar.warning("⚠️ Email not configured")
-        
-        # Email configuration inputs
-        sender_email = st.sidebar.text_input(
-            "Gmail Address",
-            value=email_config.get('sender_email', '') if email_config else '',
-            help="Your Gmail address"
-        )
-        
-        sender_password = st.sidebar.text_input(
-            "Gmail App Password",
-            value=email_config.get('sender_password', '') if email_config else '',
-            type="password",
-            help="Gmail App Password (not your regular password)"
-        )
-        
-        sender_name = st.sidebar.text_input(
-            "Sender Name",
-            value=email_config.get('sender_name', 'Heart Disease Prediction System') if email_config else 'Heart Disease Prediction System',
-            help="Name that appears in emails"
-        )
-        
-        # Email configuration buttons
-        col1, col2 = st.sidebar.columns(2)
-        
-        with col1:
-            if st.button("💾 Save Config", key="save_email_config"):
-                config = {
-                    'sender_email': sender_email,
-                    'sender_password': base64.b64encode(sender_password.encode()).decode(),
-                    'sender_name': sender_name
-                }
-                self.save_email_config(config)
-                st.sidebar.success("✅ Email config saved!")
-                st.rerun()
-        
-        with col2:
-            if st.button("🧪 Test Email", key="test_email_config"):
-                if sender_email and sender_password:
-                    self.test_email_configuration(sender_email, sender_password)
-                else:
-                    st.sidebar.error("Please enter email and password first.")
-        
-        # Clear config button
-        if email_config and email_config.get('sender_email'):
-            if st.sidebar.button("🗑️ Clear Config", key="clear_email_config"):
-                self.clear_email_config()
-                st.sidebar.success("✅ Email config cleared!")
-                st.rerun()
-        
-        # Store email config in session state
-        if sender_email and sender_password:
-            st.session_state.patient_info.update({
-                'sender_email': sender_email,
-                'sender_password': sender_password,
-                'sender_name': sender_name
-            })
-        
-        # Email setup help
-        with st.sidebar.expander("📖 Gmail Setup Help"):
-            st.markdown("""
-            **How to set up Gmail App Password:**
-            
-            1. **Enable 2-Factor Authentication** on your Google Account
-            2. Go to **Google Account Settings** → **Security**
-            3. Under "Signing in to Google", select **App passwords**
-            4. Select **Mail** and your device
-            5. **Copy the 16-digit password** and paste it above
-            6. Click "Test Email" to verify it works
-            
-            **⚠️ Important:**
-            - Use the **App Password**, not your regular Gmail password
-            - Keep your App Password secure and don't share it
-            - The test email will be sent to your own Gmail address
-            """)
+        # Email configuration UI has been removed to fully mask sender details.
         
         return features
     
