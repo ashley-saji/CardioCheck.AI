@@ -1642,36 +1642,29 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
             import sklearn
             st.info(f"🔍 Debug: Python {sys.version_info.major}.{sys.version_info.minor}, scikit-learn {sklearn.__version__}")
             
-            if OPTIMIZED_MODEL_AVAILABLE:
-                st.info("📦 Loading OptimizedHeartDiseasePredictor...")
-                self.predictor = OptimizedHeartDiseasePredictor()
+            # Use REGULAR model since OptimizedHeartDiseasePredictor has import issues
+            if REGULAR_MODEL_AVAILABLE:
+                st.info("📦 Loading HeartDiseasePredictor (regular)...")
+                self.predictor = HeartDiseasePredictor()
                 if hasattr(self.predictor, 'load_models'):
                     st.info("🔄 Calling load_models()...")
                     loaded_ok = self.predictor.load_models()
                     st.info(f"📊 load_models returned: {loaded_ok}")
                     
-                    if hasattr(self.predictor, 'best_model_instance') and self.predictor.best_model_instance:
-                        self.best_model = self.predictor.best_model_instance
-                        self.best_model_name = getattr(self.predictor, 'best_model', 'Unknown')
+                    if loaded_ok:
+                        self.best_model = getattr(self.predictor, 'best_model', None)
+                        self.best_model_name = getattr(self.predictor, 'best_model_name', 'Unknown')
                         self.scaler = getattr(self.predictor, 'scaler', None)
                         self.feature_selector = getattr(self.predictor, 'feature_selector', None)
                         self.selected_features = getattr(self.predictor, 'selected_features', None)
                         self.models_loaded = True
                         st.success(f"✅ Models loaded! Best model: {self.best_model_name}")
                     else:
-                        st.error(f"❌ best_model_instance is None or missing. loaded_ok={loaded_ok}")
-                        st.error(f"🔍 Predictor attrs: {dir(self.predictor)}")
-            elif REGULAR_MODEL_AVAILABLE:
-                self.predictor = HeartDiseasePredictor()
-                if hasattr(self.predictor, 'load_models'):
-                    loaded_ok = self.predictor.load_models()
-                    self.models_loaded = True
-                    st.success("✅ Models loaded successfully!")
+                        st.error(f"❌ load_models() returned False")
                 else:
-                    st.error("❌ Failed to load models")
+                    st.error("❌ Predictor has no load_models method")
             else:
                 st.error("❌ No model modules available")
-                st.error(f"OPTIMIZED_MODEL_AVAILABLE={OPTIMIZED_MODEL_AVAILABLE}, REGULAR_MODEL_AVAILABLE={REGULAR_MODEL_AVAILABLE}")
                 
         except Exception as e:
             import traceback
