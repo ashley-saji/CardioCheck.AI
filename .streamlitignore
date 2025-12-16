@@ -1,0 +1,16 @@
+# Streamlit ignore file
+__pycache__/
+*.pyc
+.pytest_cache/
+.git/
+.github/
+.vscode/
+*.egg-info/
+dist/
+build/
+.DS_Store
+.env
+*.log
+test_*.py
+*_test.py
+notebooks/

@@ -1650,7 +1650,7 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
     def load_models(self):
         """Load the trained models and preprocessing objects."""
         try:
-            # Use REGULAR model since it has the load_models method now
+            # Try REGULAR model first (most reliable)
             if REGULAR_MODEL_AVAILABLE:
                 self.predictor = HeartDiseasePredictor()
                 if hasattr(self.predictor, 'load_models'):
@@ -1665,14 +1665,9 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
                         self.models_loaded = True
                         st.success(f"✅ Models loaded successfully! Using: {self.best_model_name}")
                         return True
-                    else:
-                        st.error("❌ Failed to load models from disk")
-                        return False
-                else:
-                    st.error("❌ Predictor has no load_models method")
-                    return False
-            elif OPTIMIZED_MODEL_AVAILABLE:
-                # Try optimized model as fallback
+            
+            # Fallback to OPTIMIZED model if regular fails
+            if OPTIMIZED_MODEL_AVAILABLE:
                 self.predictor = OptimizedHeartDiseasePredictor()
                 if hasattr(self.predictor, 'load_models'):
                     loaded_ok = self.predictor.load_models('optimized_models')
@@ -1686,12 +1681,10 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
                         self.models_loaded = True
                         st.success(f"✅ Optimized models loaded! Using: {self.best_model_name}")
                         return True
-                    else:
-                        st.error("❌ Failed to load optimized models")
-                        return False
-            else:
-                st.error("❌ No model modules available")
-                return False
+            
+            # If both fail, show error
+            st.error("❌ No models available - both regular and optimized models failed to load")
+            return False
                 
         except Exception as e:
             st.error(f"❌ Error loading models: {str(e)}")
