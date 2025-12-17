@@ -72,6 +72,17 @@ except ImportError:
 
 warnings.filterwarnings('ignore')
 
+# Global sklearn compatibility patch: ensure tree estimators have `monotonic_cst`
+try:
+    from sklearn.tree import DecisionTreeClassifier as _DTC, DecisionTreeRegressor as _DTR
+    if not hasattr(_DTC, 'monotonic_cst'):
+        setattr(_DTC, 'monotonic_cst', None)
+    if not hasattr(_DTR, 'monotonic_cst'):
+        setattr(_DTR, 'monotonic_cst', None)
+except Exception:
+    # Best-effort; continue without failing
+    pass
+
 # Configure Streamlit page
 st.set_page_config(
     page_title="CardioCheck.AI",
@@ -225,9 +236,82 @@ class HeartDiseaseWebApp:
             if os.path.exists(data_path):
                 df = pd.read_csv(data_path)
                 # Remove target columns
-                feature_cols = [col for col in df.columns if col not in ['target', 'num', 'id', 'dataset']]
+                feature_cols = [col for col in df.columns if col not in ['target', 'num']]
                 background_raw = df[feature_cols].sample(min(100, len(df)), random_state=42)
-                
+
+                # Map categorical/text columns to numeric to match training
+                # Sex
+                if 'sex' in background_raw.columns:
+                    background_raw['sex'] = background_raw['sex'].map({
+                        'Male': 1, 'Female': 0, 'M': 1, 'F': 0,
+                        True: 1, False: 0
+                    }).fillna(0)
+
+                # Boolean-like columns
+                for col in ['fbs', 'exang']:
+                    if col in background_raw.columns:
+                        background_raw[col] = background_raw[col].map({
+                            True: 1, False: 0,
+                            'TRUE': 1, 'FALSE': 0,
+                            'True': 1, 'False': 0,
+                            1: 1, 0: 0
+                        }).fillna(0)
+
+                # Chest pain type
+                if 'cp' in background_raw.columns:
+                    cp_map = {
+                        'typical angina': 0,
+                        'atypical angina': 1,
+                        'non-anginal': 2,
+                        'asymptomatic': 3,
+                        'non-anginal pain': 2,
+                        0: 0, 1: 1, 2: 2, 3: 3
+                    }
+                    background_raw['cp'] = background_raw['cp'].map(cp_map).fillna(0)
+
+                # Resting ECG
+                if 'restecg' in background_raw.columns:
+                    restecg_map = {
+                        'normal': 0,
+                        'lv hypertrophy': 1,
+                        'st-t abnormality': 2,
+                        0: 0, 1: 1, 2: 2
+                    }
+                    background_raw['restecg'] = background_raw['restecg'].map(restecg_map).fillna(0)
+
+                # Slope
+                if 'slope' in background_raw.columns:
+                    slope_map = {
+                        'upsloping': 0,
+                        'flat': 1,
+                        'downsloping': 2,
+                        0: 0, 1: 1, 2: 2
+                    }
+                    background_raw['slope'] = background_raw['slope'].map(slope_map).fillna(0)
+
+                # Thalassemia
+                if 'thal' in background_raw.columns:
+                    thal_map = {
+                        'normal': 1,
+                        'fixed defect': 2,
+                        'reversable defect': 3,
+                        'reversible defect': 3,
+                        1: 1, 2: 2, 3: 3
+                    }
+                    background_raw['thal'] = background_raw['thal'].map(thal_map).fillna(1)
+
+                # Drop id/dataset if present (non-predictive in UI path)
+                for col in ['id', 'dataset']:
+                    if col in background_raw.columns:
+                        background_raw = background_raw.drop(columns=[col])
+
+                # Convert remaining columns to numeric safely
+                for col in background_raw.columns:
+                    background_raw[col] = pd.to_numeric(background_raw[col], errors='coerce')
+
+                # Fill NaNs with column medians
+                background_raw = background_raw.fillna(background_raw.median())
+
                 # Apply same preprocessing pipeline as predictions
                 background_processed = self.apply_feature_engineering(background_raw)
                 
@@ -255,15 +339,58 @@ class HeartDiseaseWebApp:
                         # Reorder to match training
                         background_processed = background_processed[expected_features]
                     
-                    background_scaled = self.scaler.transform(background_processed)
-                    return background_scaled[:50]
-                else:
-                    return None
-            else:
-                return None
+                    try:
+                        background_scaled = self.scaler.transform(background_processed)
+                        return background_scaled[:50]
+                    except Exception:
+                        pass
+                # If scaler missing or transform failed, fall through to fallback below
+            # If CSV missing or any issue above, create synthetic background from scaler means
+            expected_features = None
+            if hasattr(self.predictor, 'feature_names') and self.predictor.feature_names is not None:
+                expected_features = list(self.predictor.feature_names)
+            elif hasattr(self, 'scaler') and hasattr(self.scaler, 'feature_names_in_'):
+                expected_features = list(self.scaler.feature_names_in_)
+
+            if expected_features is not None and hasattr(self, 'scaler') and hasattr(self.scaler, 'mean_'):
+                import numpy as _np
+                means = list(self.scaler.mean_)
+                # Build DataFrame of means
+                rows = 50
+                data = {f: means[i] if i < len(means) else 0 for i, f in enumerate(expected_features)}
+                fallback_df = pd.DataFrame([data for _ in range(rows)])
+                try:
+                    fallback_scaled = self.scaler.transform(fallback_df)
+                    return fallback_scaled
+                except Exception:
+                    # As last resort, return zeros in scaled space
+                    return _np.zeros((rows, len(expected_features)))
+            return None
                 
         except Exception as e:
             st.warning(f"⚠️ Could not load background data: {str(e)}")
+            # Robust fallback if exception occurs
+            try:
+                expected_features = None
+                if hasattr(self.predictor, 'feature_names') and self.predictor.feature_names is not None:
+                    expected_features = list(self.predictor.feature_names)
+                elif hasattr(self, 'scaler') and hasattr(self.scaler, 'feature_names_in_'):
+                    expected_features = list(self.scaler.feature_names_in_)
+                if expected_features is not None:
+                    import numpy as _np
+                    rows = 50
+                    if hasattr(self, 'scaler') and hasattr(self.scaler, 'mean_'):
+                        means = list(self.scaler.mean_)
+                        data = {f: means[i] if i < len(means) else 0 for i, f in enumerate(expected_features)}
+                        fallback_df = pd.DataFrame([data for _ in range(rows)])
+                        try:
+                            return self.scaler.transform(fallback_df)
+                        except Exception:
+                            return _np.zeros((rows, len(expected_features)))
+                    else:
+                        return _np.zeros((rows, len(expected_features)))
+            except Exception:
+                pass
             return None
     
     def initialize_shap_explainer(self):
@@ -1690,6 +1817,12 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
                         self.scaler = getattr(self.predictor, 'scaler', None)
                         self.feature_selector = getattr(self.predictor, 'feature_selector', None)
                         self.selected_features = getattr(self.predictor, 'selected_features', None)
+                        # Proactively apply sklearn compatibility patch (e.g., monotonic_cst on trees)
+                        try:
+                            if hasattr(self.predictor, '_apply_sklearn_compat_patches') and self.best_model is not None:
+                                self.predictor._apply_sklearn_compat_patches(self.best_model)
+                        except Exception:
+                            pass
                         
                         # Validate best_model is not None
                         if self.best_model is None:
@@ -1715,6 +1848,12 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
                             self.scaler = getattr(self.predictor, 'scaler', None)
                             self.feature_selector = getattr(self.predictor, 'feature_selector', None)
                             self.selected_features = getattr(self.predictor, 'selected_features', None)
+                            # Apply compatibility patch after training reload
+                            try:
+                                if hasattr(self.predictor, '_apply_sklearn_compat_patches') and self.best_model is not None:
+                                    self.predictor._apply_sklearn_compat_patches(self.best_model)
+                            except Exception:
+                                pass
                             self.models_loaded = True
                             st.success(f"✅ Models trained and loaded! Using: {self.best_model_name}")
                             return True
@@ -1735,6 +1874,12 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
                         self.scaler = getattr(self.predictor, 'scaler', None)
                         self.feature_selector = getattr(self.predictor, 'feature_selector', None)
                         self.selected_features = getattr(self.predictor, 'selected_features', None)
+                        # Apply compatibility patch for optimized best model
+                        try:
+                            if hasattr(self.predictor, '_apply_sklearn_compat_patches') and self.best_model is not None:
+                                self.predictor._apply_sklearn_compat_patches(self.best_model)
+                        except Exception:
+                            pass
                         self.models_loaded = True
                         st.success(f"✅ Optimized models loaded! Using: {self.best_model_name}")
                         return True
@@ -1909,6 +2054,50 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
             }
             
         except Exception as e:
+            # Attempt a one-time sklearn compatibility patch if relevant
+            err_msg = str(e)
+            if 'monotonic_cst' in err_msg and hasattr(self, 'predictor') and hasattr(self.predictor, '_apply_sklearn_compat_patches'):
+                try:
+                    self.predictor._apply_sklearn_compat_patches(self.best_model)
+                    # Retry once after patching
+                    feature_df = pd.DataFrame([features])
+                    if hasattr(self.predictor, 'feature_names') and self.predictor.feature_names:
+                        expected = self.predictor.feature_names
+                        for c in set(expected) - set(feature_df.columns):
+                            feature_df[c] = 0
+                        for c in set(feature_df.columns) - set(expected):
+                            feature_df = feature_df.drop(columns=[c])
+                        feature_df = feature_df[expected]
+                    X_scaled = self.scaler.transform(feature_df)
+                    prediction = self.best_model.predict(X_scaled)
+                    pred = int(prediction[0]) if hasattr(prediction, '__len__') else int(prediction)
+                    if hasattr(self.best_model, 'predict_proba'):
+                        probability = self.best_model.predict_proba(X_scaled)
+                        if hasattr(probability[0], '__len__'):
+                            prob = float(probability[0][1]) if len(probability[0]) > 1 else float(probability[0][0])
+                        else:
+                            prob = float(probability[0])
+                    else:
+                        prob = 0.5
+                    if prob >= 0.7:
+                        risk_level, confidence = "Very High", "High"
+                    elif prob >= 0.5:
+                        risk_level, confidence = "High", "Medium"
+                    elif prob >= 0.3:
+                        risk_level, confidence = "Moderate", "Medium"
+                    elif prob >= 0.2:
+                        risk_level, confidence = "Low", "High"
+                    else:
+                        risk_level, confidence = "Very Low", "High"
+                    return {
+                        'prediction': int(pred),
+                        'probability': float(prob),
+                        'percentage': f"{prob*100:.1f}%",
+                        'risk_level': risk_level,
+                        'confidence': confidence
+                    }
+                except Exception:
+                    pass
             st.error(f"Prediction failed: {str(e)}")
             import traceback
             with st.expander("🔍 Prediction Error Details"):
