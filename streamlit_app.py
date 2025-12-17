@@ -1066,6 +1066,10 @@ class HeartDiseaseWebApp:
                     if st.button("🔮 Calculate New Risk", key="whatif_predict"):
                         with st.spinner("Calculating new risk..."):
                             try:
+                                # Convert string values to numeric (match encoding in sidebar)
+                                if 'exang' in modified_features and isinstance(modified_features['exang'], str):
+                                    modified_features['exang'] = 1 if modified_features['exang'] == "Yes" else 0
+                                
                                 # Make prediction with modified features
                                 modified_results = self.make_prediction(modified_features)
                                 
