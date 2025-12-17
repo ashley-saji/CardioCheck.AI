@@ -1280,7 +1280,7 @@ class HeartDiseaseWebApp:
                 
                 # Create a nice table
                 feature_df = pd.DataFrame(feature_display, columns=['Parameter', 'Value'])
-                st.dataframe(feature_df, width='stretch', hide_index=True)
+                st.dataframe(feature_df, use_container_width=True, hide_index=True)
 
     def display_prediction_results(self, results, features):
         """Display prediction results with beautiful visualizations."""
