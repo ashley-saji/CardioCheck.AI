@@ -504,8 +504,8 @@ class HeartDiseaseWebApp:
         except Exception as e:
             st.error(f"❌ SHAP generation failed: {str(e)}")
             import traceback
-            with st.expander("🔍 Debug Info"):
-                st.code(traceback.format_exc())
+            st.caption("🔍 Debug Info")
+            st.code(traceback.format_exc())
             return None
     
     def create_shap_waterfall_chart(self, shap_values, feature_names, base_value):
@@ -1137,8 +1137,8 @@ class HeartDiseaseWebApp:
                 }
                 
                 for param, explanation in impact_info.items():
-                    with st.expander(param):
-                        st.markdown(explanation)
+                    st.markdown(f"###### {param}")
+                    st.markdown(explanation)
                 
                 # Quick scenario buttons
                 st.markdown("---")
@@ -1249,38 +1249,38 @@ class HeartDiseaseWebApp:
                 """)
             
             # Show current feature values for reference
-                with st.expander("📋 Current Feature Values"):
-                    st.markdown("**Clinical Parameters Used in Analysis:**")
-                    
-                    # Create a nice table of feature values
-                    feature_display = []
-                    feature_mapping = {
-                        'age': 'Age (years)',
-                        'sex': 'Sex',
-                        'cp': 'Chest Pain Type',
-                        'trestbps': 'Resting Blood Pressure (mm Hg)',
-                        'chol': 'Cholesterol (mg/dl)',
-                        'fbs': 'Fasting Blood Sugar > 120 mg/dl',
-                        'restecg': 'Resting ECG',
-                        'thalch': 'Maximum Heart Rate (bpm)',
-                        'exang': 'Exercise Induced Angina',
-                        'oldpeak': 'ST Depression',
-                        'slope': 'ST Slope',
-                        'ca': 'Major Vessels (0-3)',
-                        'thal': 'Thalassemia Type'
-                    }
-                    
-                    for feature, value in features.items():
-                        display_name = feature_mapping.get(feature, feature)
-                        if isinstance(value, float):
-                            display_value = f"{value:.2f}"
-                        else:
-                            display_value = str(value)
-                        feature_display.append([display_name, display_value])
-                    
-                    # Create a nice table
-                    feature_df = pd.DataFrame(feature_display, columns=['Parameter', 'Value'])
-                    st.dataframe(feature_df, width='stretch', hide_index=True)
+                st.markdown("#### 📋 Current Feature Values")
+                st.markdown("**Clinical Parameters Used in Analysis:**")
+                
+                # Create a nice table of feature values
+                feature_display = []
+                feature_mapping = {
+                    'age': 'Age (years)',
+                    'sex': 'Sex',
+                    'cp': 'Chest Pain Type',
+                    'trestbps': 'Resting Blood Pressure (mm Hg)',
+                    'chol': 'Cholesterol (mg/dl)',
+                    'fbs': 'Fasting Blood Sugar > 120 mg/dl',
+                    'restecg': 'Resting ECG',
+                    'thalch': 'Maximum Heart Rate (bpm)',
+                    'exang': 'Exercise Induced Angina',
+                    'oldpeak': 'ST Depression',
+                    'slope': 'ST Slope',
+                    'ca': 'Major Vessels (0-3)',
+                    'thal': 'Thalassemia Type'
+                }
+                
+                for feature, value in features.items():
+                    display_name = feature_mapping.get(feature, feature)
+                    if isinstance(value, float):
+                        display_value = f"{value:.2f}"
+                    else:
+                        display_value = str(value)
+                    feature_display.append([display_name, display_value])
+                
+                # Create a nice table
+                feature_df = pd.DataFrame(feature_display, columns=['Parameter', 'Value'])
+                st.dataframe(feature_df, width='stretch', hide_index=True)
 
     def display_prediction_results(self, results, features):
         """Display prediction results with beautiful visualizations."""
