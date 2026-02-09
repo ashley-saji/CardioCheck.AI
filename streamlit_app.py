@@ -1016,7 +1016,7 @@ class HeartDiseaseWebApp:
                         modified_features['chol'] = st.slider(
                             "🩸 Cholesterol (mg/dl)", 
                             min_value=100, max_value=400, 
-                            value=int(features['chol']),
+                            value = int(features['chol']) if features.get('chol') is not None else 200
                             help="Lower cholesterol typically reduces risk"
                         )
                     
@@ -1058,7 +1058,7 @@ class HeartDiseaseWebApp:
                         modified_features['oldpeak'] = st.slider(
                             "📉 ST Depression", 
                             min_value=0.0, max_value=6.0, 
-                            value=float(features['oldpeak']),
+                            value = float(features['oldpeak']) if features.get('oldpeak') is not None else 1.0
                             step=0.1,
                             help="Lower ST depression is better"
                         )
