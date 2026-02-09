@@ -2485,12 +2485,15 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
 
                 st.markdown("#### 🧪 Lab Values (Auto-filled if available)")
 
+                default_chol = parsed["chol"] if parsed["chol"] is not None else 200
+
                 chol = st.number_input(
                     "Total Cholesterol (mg/dl)",
                     min_value=50,
                     max_value=500,
-                    value=parsed.get("chol") or 200
+                    value=int(default_chol)
                 )
+
 
                 fbs = st.selectbox(
                     "Fasting Blood Sugar > 120 mg/dl",
