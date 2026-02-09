@@ -41,6 +41,8 @@ from datetime import datetime
 import time
 import json
 import hashlib
+import pdfplumber
+
 
 # PDF generation
 try:
@@ -198,6 +200,23 @@ st.markdown("""
 
 class HeartDiseaseWebApp:
     """Main web application class for heart disease prediction."""
+
+    def extract_text_from_pdf(uploaded_file):
+    """
+    Extract raw text from an uploaded PDF file.
+    Works well for PharmEasy lab reports.
+    """
+    try:
+        text = ""
+        with pdfplumber.open(uploaded_file) as pdf:
+            for page in pdf.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n"
+        return text.strip()
+    except Exception as e:
+        return None
+
     
     def __init__(self):
         self.predictor = None
@@ -2308,6 +2327,33 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
         
         # Create sidebar for input
         features = self.create_sidebar()
+
+        # -------------------------------
+        # PDF Upload (Optional)
+        # -------------------------------
+        st.markdown("### 📄 Upload Lab Report (Optional)")
+
+        uploaded_pdf = st.file_uploader(
+            "Upload PharmEasy Lab Report (PDF)",
+            type=["pdf"]
+        )
+
+        if uploaded_pdf is not None:
+            with st.spinner("Extracting text from PDF..."):
+                extracted_text = extract_text_from_pdf(uploaded_pdf)
+
+            if extracted_text:
+                st.success("✅ PDF uploaded and text extracted successfully")
+
+                # Store raw text in session state for next steps
+                st.session_state["pdf_raw_text"] = extracted_text
+
+                # Optional: show preview (collapsed)
+                with st.expander("🔍 View extracted text (debug)"):
+                    st.text(extracted_text[:3000])  # limit for safety
+            else:
+                st.error("❌ Could not read this PDF. Please upload a valid PharmEasy report.")
+
         
         # Main prediction interface
         col1, col2, col3 = st.columns([1, 2, 1])
