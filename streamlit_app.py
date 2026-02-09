@@ -200,22 +200,22 @@ st.markdown("""
 
 class HeartDiseaseWebApp:
     """Main web application class for heart disease prediction."""
-
-    def extract_text_from_pdf(uploaded_file):
-    """
-    Extract raw text from an uploaded PDF file.
-    Works well for PharmEasy lab reports.
-    """
-    try:
-        text = ""
-        with pdfplumber.open(uploaded_file) as pdf:
-            for page in pdf.pages:
-                page_text = page.extract_text()
-                if page_text:
-                    text += page_text + "\n"
-        return text.strip()
-    except Exception as e:
-        return None
+    
+    def extract_text_from_pdf(self,uploaded_file):
+        """
+        Extract raw text from an uploaded PDF file.
+        Works well for PharmEasy lab reports.
+        """
+        try:
+            text = ""
+            with pdfplumber.open(uploaded_file) as pdf:
+                for page in pdf.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text += page_text + "\n"
+            return text.strip()
+        except Exception:
+            return None
 
     
     def __init__(self):
