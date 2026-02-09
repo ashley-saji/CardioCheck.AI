@@ -1025,7 +1025,7 @@ class HeartDiseaseWebApp:
                         modified_features['trestbps'] = st.slider(
                             "🩺 Resting Blood Pressure (mm Hg)", 
                             min_value=80, max_value=200, 
-                            value=int(features['trestbps']),
+                            value=int(features['trestbps']) if features.get('trestbps') is not None else 120,
                             help="Lower blood pressure is generally better"
                         )
                     
