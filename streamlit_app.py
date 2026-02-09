@@ -44,6 +44,24 @@ import hashlib
 import pdfplumber
 import re
 
+def extract_total_cholesterol(text: str):
+    """
+    Extract ONLY Total Cholesterol from PharmEasy reports.
+    Avoids LDL / HDL / VLDL confusion.
+    """
+    patterns = [
+        r"TOTAL\s+CHOLESTEROL\s*[:\-]?\s*(\d{2,4})\s*mg/dl",
+        r"Total\s+Cholesterol\s*[:\-]?\s*(\d{2,4})\s*mg/dl"
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            return int(match.group(1))
+
+    return None
+
+
 
 
 # PDF generation
@@ -248,10 +266,11 @@ class HeartDiseaseWebApp:
 
         # -------- Tier 2 --------
 
-        # Total Cholesterol
-        chol_match = re.search(r"Cholesterol.*?(\d{2,4})\s*mg/dl", text, re.IGNORECASE)
-        if chol_match:
-            data["chol"] = int(chol_match.group(1))
+        # -------- Total Cholesterol (STRICT) --------
+        total_chol = extract_total_cholesterol(text)
+        if total_chol is not None:
+            data["chol"] = total_chol
+
 
         # Fasting Blood Sugar
         fbs_match = re.search(r"Fasting Blood Sugar.*?(\d{2,4})\s*mg/dl", text, re.IGNORECASE)
@@ -2231,8 +2250,9 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
         features['age'] = st.sidebar.slider(
             "Age (years)",
             20, 100,
-            st.session_state.get("age", 50)
+            st.session_state.patient_info.get("age", 50)
         )
+
 
         sex_index = 0 if st.session_state.get("sex", 1) == 1 else 1
 
@@ -2478,13 +2498,17 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
                 confirmed = st.form_submit_button("✅ Confirm & Use These Values")
 
             if confirmed:
-                st.session_state["patient_name"] = name
-                st.session_state["age"] = age
-                st.session_state["sex"] = 1 if sex == "Male" else 0
+                # Sync PDF-confirmed data into sidebar state
+                st.session_state.patient_info["name"] = name
+                st.session_state.patient_info["age"] = age
+                st.session_state.patient_info["sex"] = sex
+
+                # Sync clinical values
                 st.session_state["chol"] = chol
                 st.session_state["fbs"] = 1 if fbs == "Yes" else 0
 
-                st.success("✅ Patient data confirmed. You may now run prediction.")
+                st.success("✅ Patient data confirmed and auto-filled in sidebar.")
+
 
         
         # Main prediction interface
