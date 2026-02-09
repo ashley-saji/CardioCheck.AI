@@ -44,27 +44,6 @@ import hashlib
 import pdfplumber
 import re
 
-def extract_total_cholesterol(text: str):
-    """
-    Extract ONLY Total Cholesterol from PharmEasy reports.
-    Explicitly avoids LDL / HDL / VLDL.
-    """
-    patterns = [
-        # Most common PharmEasy format
-        r"TOTAL\s+CHOLESTEROL\s*[:\-]?\s*(\d{2,4})\s*mg\s*/?\s*d[lL]",
-        r"Total\s+Cholesterol\s*[:\-]?\s*(\d{2,4})\s*mg\s*/?\s*d[lL]",
-        r"Cholesterol,\s*Total\s*[:\-]?\s*(\d{2,4})\s*mg\s*/?\s*d[lL]"
-    ]
-
-    for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            return int(match.group(1))
-
-    return None
-
-
-
 
 
 # PDF generation
@@ -241,6 +220,30 @@ class HeartDiseaseWebApp:
         except Exception:
             return None
 
+    def extract_total_cholesterol(text: str):
+        """
+        Extract TOTAL cholesterol from PharmEasy reports.
+        Avoids LDL / HDL / VLDL false matches.
+        """
+        patterns = [
+            # Most common PharmEasy format
+            r"Total\s*Cholesterol\s*[:\-]?\s*(\d{2,4})\s*mg\/?d[lL]",
+
+            # Backup formats
+            r"TOTAL\s*CHOLESTEROL\s*(\d{2,4})",
+            r"Cholesterol\s*\(Total\)\s*(\d{2,4})"
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                value = int(match.group(1))
+                if 80 <= value <= 350:  # medical sanity check
+                    return value
+
+        return None
+
+    
     @staticmethod
     def parse_pharmeasy_report(text: str) -> dict:
         """
