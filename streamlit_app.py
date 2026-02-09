@@ -42,6 +42,8 @@ import time
 import json
 import hashlib
 import pdfplumber
+import re
+
 
 
 # PDF generation
@@ -217,6 +219,47 @@ class HeartDiseaseWebApp:
             return text.strip()
         except Exception:
             return None
+
+    @staticmethod
+    def parse_pharmeasy_report(text: str) -> dict:
+        """
+        Extract Tier 1 and Tier 2 clinical parameters from PharmEasy reports.
+        Returns a dict with detected values (None if not found).
+        """
+        data = {
+            "name": None,
+            "age": None,
+            "sex": None,
+            "chol": None,
+            "fbs": None
+        }
+
+        if not text:
+            return data
+
+        # -------- Tier 1 --------
+
+        # Name + Age + Sex (e.g. Ashluy(22Y/M))
+        match = re.search(r"Name\s*:\s*([A-Za-z ]+)\s*\(?(\d{1,3})Y\s*/\s*([MF])\)?", text)
+        if match:
+            data["name"] = match.group(1).strip()
+            data["age"] = int(match.group(2))
+            data["sex"] = 1 if match.group(3) == "M" else 0
+
+        # -------- Tier 2 --------
+
+        # Total Cholesterol
+        chol_match = re.search(r"Cholesterol.*?(\d{2,4})\s*mg/dl", text, re.IGNORECASE)
+        if chol_match:
+            data["chol"] = int(chol_match.group(1))
+
+        # Fasting Blood Sugar
+        fbs_match = re.search(r"Fasting Blood Sugar.*?(\d{2,4})\s*mg/dl", text, re.IGNORECASE)
+        if fbs_match:
+            value = int(fbs_match.group(1))
+            data["fbs"] = 1 if value > 120 else 0
+
+        return data
 
     
     def __init__(self):
@@ -2185,9 +2228,21 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
         # Clinical inputs
         features = {}
         
-        features['age'] = st.sidebar.slider("Age (years)", 20, 100, 50)
-        features['sex'] = st.sidebar.selectbox("Sex", ["Male", "Female"])
+        features['age'] = st.sidebar.slider(
+            "Age (years)",
+            20, 100,
+            st.session_state.get("age", 50)
+        )
+
+        sex_index = 0 if st.session_state.get("sex", 1) == 1 else 1
+
+        features['sex'] = st.sidebar.selectbox(
+            "Sex",
+            ["Male", "Female"],
+            index=sex_index
+        )
         features['sex'] = 1 if features['sex'] == "Male" else 0
+
         
         features['cp'] = st.sidebar.selectbox(
             "Chest Pain Type",
@@ -2222,16 +2277,26 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
 
         if has_chol == "Yes":
             features['chol'] = st.sidebar.slider(
-                "Enter Cholesterol (mg/dl)", 100, 400, 200
+                "Enter Cholesterol (mg/dl)",
+                100, 400,
+                st.session_state.get("chol", 200)
             )
+
             st.session_state.missing_fields['chol'] = False
         else:
             features['chol'] = None
             st.session_state.missing_fields['chol'] = True
 
         
-        features['fbs'] = st.sidebar.selectbox("Fasting Blood Sugar > 120 mg/dl", ["No", "Yes"])
+        fbs_index = st.session_state.get("fbs", 0)
+
+        features['fbs'] = st.sidebar.selectbox(
+            "Fasting Blood Sugar > 120 mg/dl",
+            ["No", "Yes"],
+            index=fbs_index
+        )
         features['fbs'] = 1 if features['fbs'] == "Yes" else 0
+
         
         features['restecg'] = st.sidebar.selectbox(
             "Resting ECG",
@@ -2351,6 +2416,9 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
 
                     # Store raw text in session state for next steps
                     st.session_state["pdf_raw_text"] = extracted_text
+                    parsed_data = HeartDiseaseWebApp.parse_pharmeasy_report(extracted_text)
+                    st.session_state["parsed_pdf_data"] = parsed_data
+
 
                     # Optional debug preview
                     with st.expander("🔍 View extracted text (debug)"):
@@ -2362,6 +2430,61 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
             except Exception:
                 st.error("❌ Failed to process uploaded report.")
 
+
+        if "parsed_pdf_data" in st.session_state:
+            parsed = st.session_state["parsed_pdf_data"]
+
+            st.markdown("### 🔍 Extracted Patient Details (Please Confirm)")
+
+            with st.form("confirm_pdf_data"):
+                col1, col2, col3 = st.columns(3)
+
+                with col1:
+                    name = st.text_input(
+                        "Patient Name",
+                        value=parsed.get("name") or ""
+                    )
+
+                with col2:
+                    age = st.number_input(
+                        "Age",
+                        min_value=1,
+                        max_value=120,
+                        value=parsed.get("age") or 30
+                    )
+
+                with col3:
+                    sex = st.selectbox(
+                        "Sex",
+                        options=["Male", "Female"],
+                        index=0 if parsed.get("sex") == 1 else 1
+                    )
+
+                st.markdown("#### 🧪 Lab Values (Auto-filled if available)")
+
+                chol = st.number_input(
+                    "Total Cholesterol (mg/dl)",
+                    min_value=50,
+                    max_value=500,
+                    value=parsed.get("chol") or 200
+                )
+
+                fbs = st.selectbox(
+                    "Fasting Blood Sugar > 120 mg/dl",
+                    options=["No", "Yes"],
+                    index=parsed.get("fbs") if parsed.get("fbs") is not None else 0
+                )
+
+                confirmed = st.form_submit_button("✅ Confirm & Use These Values")
+
+            if confirmed:
+                st.session_state["patient_name"] = name
+                st.session_state["age"] = age
+                st.session_state["sex"] = 1 if sex == "Male" else 0
+                st.session_state["chol"] = chol
+                st.session_state["fbs"] = 1 if fbs == "Yes" else 0
+
+                st.success("✅ Patient data confirmed. You may now run prediction.")
 
         
         # Main prediction interface
