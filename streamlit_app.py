@@ -47,11 +47,13 @@ import re
 def extract_total_cholesterol(text: str):
     """
     Extract ONLY Total Cholesterol from PharmEasy reports.
-    Avoids LDL / HDL / VLDL confusion.
+    Explicitly avoids LDL / HDL / VLDL.
     """
     patterns = [
-        r"TOTAL\s+CHOLESTEROL\s*[:\-]?\s*(\d{2,4})\s*mg/dl",
-        r"Total\s+Cholesterol\s*[:\-]?\s*(\d{2,4})\s*mg/dl"
+        # Most common PharmEasy format
+        r"TOTAL\s+CHOLESTEROL\s*[:\-]?\s*(\d{2,4})\s*mg\s*/?\s*d[lL]",
+        r"Total\s+Cholesterol\s*[:\-]?\s*(\d{2,4})\s*mg\s*/?\s*d[lL]",
+        r"Cholesterol,\s*Total\s*[:\-]?\s*(\d{2,4})\s*mg\s*/?\s*d[lL]"
     ]
 
     for pattern in patterns:
@@ -60,6 +62,7 @@ def extract_total_cholesterol(text: str):
             return int(match.group(1))
 
     return None
+
 
 
 
