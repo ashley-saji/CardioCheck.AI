@@ -227,6 +227,10 @@ class HeartDiseaseWebApp:
             st.session_state.features = None
         if 'email_config' not in st.session_state:
             st.session_state.email_config = self.load_email_config()
+        # Track which clinical values were missing / unavailable
+        if 'missing_fields' not in st.session_state:
+            st.session_state.missing_fields = {}
+
     
     def get_background_data(self):
         """Get background data for SHAP explainer."""
@@ -1287,6 +1291,15 @@ class HeartDiseaseWebApp:
                 st.dataframe(feature_df, use_container_width=True, hide_index=True)
 
     def display_prediction_results(self, results, features):
+        
+        if any(st.session_state.get('missing_fields', {}).values()):
+            st.warning(
+                "⚠️ Some clinical values were unavailable and were safely estimated. "
+                "Prediction accuracy may be slightly reduced. "
+                "This is not a medical diagnosis."
+            )
+
+        
         """Display prediction results with beautiful visualizations."""
         if results is None:
             return
@@ -2002,6 +2015,26 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
                         "best_model_name": getattr(self, 'best_model_name', 'N/A')
                     })
                 return None
+
+            # Safely handle missing clinical values (user-confirmed)
+            safe_defaults = {
+                'trestbps': 120,
+                'chol': 200,
+                'thalch': 150,
+                'oldpeak': 1.0,
+                'ca': 0,
+                'thal': 1
+            }
+
+            clean_features = {}
+            for key, value in features.items():
+                if value is None:
+                    clean_features[key] = safe_defaults.get(key, 0)
+                else:
+                    clean_features[key] = value
+
+            features = clean_features
+
             
             # Convert to DataFrame
             feature_df = pd.DataFrame([features])
@@ -2143,8 +2176,38 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
         cp_mapping = {"Typical Angina": 0, "Atypical Angina": 1, "Non-anginal Pain": 2, "Asymptomatic": 3}
         features['cp'] = cp_mapping[features['cp']]
         
-        features['trestbps'] = st.sidebar.slider("Resting Blood Pressure (mm Hg)", 80, 200, 120)
-        features['chol'] = st.sidebar.slider("Cholesterol (mg/dl)", 100, 400, 200)
+        st.sidebar.markdown("**Resting Blood Pressure (mm Hg)**")
+        has_trestbps = st.sidebar.radio(
+            "Do you have this value?",
+            ["Yes", "No"],
+            key="has_trestbps"
+        )
+
+        if has_trestbps == "Yes":
+            features['trestbps'] = st.sidebar.slider(
+                "Enter BP (mm Hg)", 80, 200, 120
+            )
+            st.session_state.missing_fields['trestbps'] = False
+        else:
+            features['trestbps'] = None
+            st.session_state.missing_fields['trestbps'] = True
+
+        st.sidebar.markdown("**Cholesterol (mg/dl)**")
+        has_chol = st.sidebar.radio(
+            "Do you have this value?",
+            ["Yes", "No"],
+            key="has_chol"
+        )
+
+        if has_chol == "Yes":
+            features['chol'] = st.sidebar.slider(
+                "Enter Cholesterol (mg/dl)", 100, 400, 200
+            )
+            st.session_state.missing_fields['chol'] = False
+        else:
+            features['chol'] = None
+            st.session_state.missing_fields['chol'] = True
+
         
         features['fbs'] = st.sidebar.selectbox("Fasting Blood Sugar > 120 mg/dl", ["No", "Yes"])
         features['fbs'] = 1 if features['fbs'] == "Yes" else 0
@@ -2157,12 +2220,42 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
         restecg_mapping = {"Normal": 0, "ST-T Abnormality": 1, "Left Ventricular Hypertrophy": 2}
         features['restecg'] = restecg_mapping[features['restecg']]
         
-        features['thalch'] = st.sidebar.slider("Maximum Heart Rate (bpm)", 60, 220, 150)
+        st.sidebar.markdown("**Maximum Heart Rate (bpm)**")
+        has_thalch = st.sidebar.radio(
+            "Do you have this value?",
+            ["Yes", "No"],
+            key="has_thalch"
+        )
+
+        if has_thalch == "Yes":
+            features['thalch'] = st.sidebar.slider(
+                "Enter Max Heart Rate (bpm)", 60, 220, 150
+            )
+            st.session_state.missing_fields['thalch'] = False
+        else:
+            features['thalch'] = None
+            st.session_state.missing_fields['thalch'] = True
+
         
         features['exang'] = st.sidebar.selectbox("Exercise Induced Angina", ["No", "Yes"])
         features['exang'] = 1 if features['exang'] == "Yes" else 0
         
-        features['oldpeak'] = st.sidebar.slider("ST Depression", 0.0, 6.0, 1.0, 0.1)
+        st.sidebar.markdown("**ST Depression**")
+        has_oldpeak = st.sidebar.radio(
+            "Do you have this value?",
+            ["Yes", "No"],
+            key="has_oldpeak"
+        )
+
+        if has_oldpeak == "Yes":
+            features['oldpeak'] = st.sidebar.slider(
+                "Enter ST Depression", 0.0, 6.0, 1.0, 0.1
+            )
+            st.session_state.missing_fields['oldpeak'] = False
+        else:
+            features['oldpeak'] = None
+            st.session_state.missing_fields['oldpeak'] = True
+
         
         features['slope'] = st.sidebar.selectbox(
             "ST Slope",
@@ -2292,7 +2385,9 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
                     st.session_state.prediction_made = False
                     st.session_state.prediction_results = None
                     st.session_state.features = None
+                    st.session_state.missing_fields = {}  # reset missing flags
                     st.rerun()
+
         
         # About section
         with st.expander("ℹ️ About This Application"):
