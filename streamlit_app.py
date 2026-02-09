@@ -1454,10 +1454,11 @@ class HeartDiseaseWebApp:
         if features['age'] > 60:
             risk_factors.append("Age over 60 increases cardiovascular risk")
         
-        if features['chol'] > 240:
+        if features.get('chol') is not None and features['chol'] > 240:
             risk_factors.append("High cholesterol (>240 mg/dl)")
+
         
-        if features['trestbps'] > 140:
+        if features.get('trestbps') is not None and features['trestbps'] > 140:
             risk_factors.append("High blood pressure (>140 mm Hg)")
         
         if features['fbs'] == 1:
@@ -1469,7 +1470,7 @@ class HeartDiseaseWebApp:
         if features['cp'] == 3:  # Asymptomatic
             risk_factors.append("Asymptomatic chest pain (higher risk)")
         
-        if features['thalch'] < 100:
+        if features.get('thalch') is not None and features['thalch'] < 100:
             risk_factors.append("Low maximum heart rate")
         
         # Display risk factors
