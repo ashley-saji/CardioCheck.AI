@@ -201,7 +201,8 @@ st.markdown("""
 class HeartDiseaseWebApp:
     """Main web application class for heart disease prediction."""
     
-    def extract_text_from_pdf(self,uploaded_file):
+    @staticmethod
+    def extract_text_from_pdf(uploaded_file):
         """
         Extract raw text from an uploaded PDF file.
         Works well for PharmEasy lab reports.
