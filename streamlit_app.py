@@ -2339,21 +2339,29 @@ Accuracy: 81.52% | Technology: Neural Networks + SHAP Analysis
             type=["pdf"]
         )
 
+        extracted_text = None
+
         if uploaded_pdf is not None:
-            with st.spinner("Extracting text from PDF..."):
-                extracted_text = extract_text_from_pdf(uploaded_pdf)
+            try:
+                with st.spinner("Extracting text from PDF..."):
+                    extracted_text = HeartDiseaseWebApp.extract_text_from_pdf(uploaded_pdf)
 
-            if extracted_text:
-                st.success("✅ PDF uploaded and text extracted successfully")
+                if extracted_text:
+                    st.success("✅ PDF uploaded and text extracted successfully")
 
-                # Store raw text in session state for next steps
-                st.session_state["pdf_raw_text"] = extracted_text
+                    # Store raw text in session state for next steps
+                    st.session_state["pdf_raw_text"] = extracted_text
 
-                # Optional: show preview (collapsed)
-                with st.expander("🔍 View extracted text (debug)"):
-                    st.text(extracted_text[:3000])  # limit for safety
-            else:
-                st.error("❌ Could not read this PDF. Please upload a valid PharmEasy report.")
+                    # Optional debug preview
+                    with st.expander("🔍 View extracted text (debug)"):
+                        st.text(extracted_text[:3000])
+
+                else:
+                    st.error("❌ Could not read this PDF. Please upload a valid PharmEasy report.")
+
+            except Exception:
+                st.error("❌ Failed to process uploaded report.")
+
 
         
         # Main prediction interface
