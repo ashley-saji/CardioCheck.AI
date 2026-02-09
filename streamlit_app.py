@@ -220,6 +220,7 @@ class HeartDiseaseWebApp:
         except Exception:
             return None
 
+    @staticmethod
     def extract_total_cholesterol(text: str):
         """
         Extract TOTAL cholesterol from PharmEasy reports.
@@ -273,7 +274,7 @@ class HeartDiseaseWebApp:
         # -------- Tier 2 --------
 
         # -------- Total Cholesterol (STRICT) --------
-        total_chol = extract_total_cholesterol(text)
+        total_chol = HeartDiseaseWebApp.extract_total_cholesterol(text)
         if total_chol is not None:
             data["chol"] = total_chol
 
