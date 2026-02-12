@@ -223,26 +223,29 @@ class HeartDiseaseWebApp:
     @staticmethod
     def extract_total_cholesterol(text: str):
         """
-        Extract TOTAL cholesterol from PharmEasy reports.
-        Avoids LDL / HDL / VLDL false matches.
+        Extract ONLY Total Cholesterol from PharmEasy reports.
+        Explicitly avoids LDL / HDL / VLDL false matches.
         """
-        patterns = [
-            # Most common PharmEasy format
-            r"Total\s*Cholesterol\s*[:\-]?\s*(\d{2,4})\s*mg\/?d[lL]",
 
-            # Backup formats
-            r"TOTAL\s*CHOLESTEROL\s*(\d{2,4})",
-            r"Cholesterol\s*\(Total\)\s*(\d{2,4})"
-        ]
+        lines = text.splitlines()
 
-        for pattern in patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                value = int(match.group(1))
-                if 80 <= value <= 350:  # medical sanity check
-                    return value
+        for line in lines:
+            line_clean = line.strip().upper()
+
+            # Must contain TOTAL CHOLESTEROL
+            if "TOTAL CHOLESTEROL" in line_clean:
+                # Must NOT contain LDL / HDL / VLDL
+                if any(x in line_clean for x in ["LDL", "HDL", "VLDL"]):
+                    continue
+
+                match = re.search(r"\b(\d{2,4})\b", line_clean)
+                if match:
+                    value = int(match.group(1))
+                    if 80 <= value <= 350:
+                        return value
 
         return None
+
 
     
     @staticmethod
